@@ -1,0 +1,101 @@
+#!/bin/sh
+############################################################ IDENT(1)
+#
+# $Title: Script to list RPMs in the order they were installed $
+# $Copyright: 2019-2020 Devin Teske. All rights reserved. $
+# $FrauBSD: lsrpm/lsrpm 2020-05-31 21:05:02 -0700 freebsdfrau $
+#
+############################################################ GLOBALS
+
+pgm="${0##*/}" # Program basename
+
+#
+# Global exit status
+#
+SUCCESS=0
+FAILURE=1
+
+#
+# Command-line options
+#
+VERBOSE=0	# -v
+
+#
+# Command-line arguments
+#
+START_EPOCH=0
+STOP_EPOCH=0
+
+#
+# rpmquery formats
+#
+INSTALL_DATE='%{INSTALLTIME:date}'
+INSTALL_TIME='%{INSTALLTIME}'
+RPM_NAME='%{NAME}-%{VERSION}-%{RELEASE}'
+RPMQUERY_FORMAT="$INSTALL_TIME $INSTALL_DATE $RPM_NAME"
+
+############################################################ FUNCTIONS
+
+usage()
+{
+	local fmt="$1"
+	local optfmt="\t%-5s %s\n"
+	exec >&2
+	if [ "$fmt" ]; then
+		shift 1 # fmt
+		printf "%s: $fmt\n" "$pgm" "$@"
+	fi
+	printf "Usage: %s [-hv] [start_epoch] [stop_epoch]\n" "$pgm"
+	printf "Options:\n"
+	printf "$optfmt" "-h" "Print this text and exit."
+	printf "$optfmt" "-v" "Verbose. Always show install time."
+	exit $FAILURE
+}
+
+############################################################ MAIN
+
+#
+# Process command-line options
+#
+while getopts hv flag; do
+	case "$flag" in
+	v) VERBOSE=1 ;;
+	*) usage # NOTREACHED
+	esac
+done
+shift $(( $OPTIND - 1 ))
+
+#
+# Process command-line arguments
+#
+if [ $# -ge 1 -a $# -le 2 ]; then
+	case "$1" in
+	""|*[^0-9]*) usage "illegal argument -- %s" "$1" ;; # NOTREACHED
+	esac
+	START_EPOCH=$1
+elif [ $# -ge 3 ]; then
+	usage "Too many arguments" # NOTREACHED
+fi
+if [ $# -eq 2 ]; then
+	case "$2" in
+	""|*[^0-9]*) usage "illegal argument -- %s" "$2" ;; # NOTREACHED
+	esac
+	STOP_EPOCH=$2
+fi
+
+#
+# List RPMs
+#
+rpm -qa --qf "$RPMQUERY_FORMAT\n" | sort -n | awk \
+	-v start=$START_EPOCH \
+	-v stop=$STOP_EPOCH \
+	-v verbose=$VERBOSE \
+	' # BEGIN-AWK
+		$1 >= start && (stop == 0 || $1 <= stop) {
+			print (!verbose && start > 0 ? $NF : $0)
+		}
+	' # END-AWK
+
+################################################################################
+# END
+################################################################################
